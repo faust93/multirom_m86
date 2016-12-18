@@ -58,7 +58,6 @@ endif
 include $(BUILD_EXECUTABLE)
 
 
-
 # Trampoline
 include $(multirom_local_path)/trampoline/Android.mk
 

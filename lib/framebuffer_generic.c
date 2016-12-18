@@ -34,6 +34,8 @@
 // for the code to know how many buffers we use
 #define NUM_BUFFERS 2
 
+unsigned int smem_len;
+
 struct fb_generic_data {
     px_type *mapped[NUM_BUFFERS];
     int active_buff;
@@ -41,57 +43,39 @@ struct fb_generic_data {
 
 static int impl_open(struct framebuffer *fb)
 {
-    fb->vi.bits_per_pixel = PIXEL_SIZE * 8;
+    fb->vi.bits_per_pixel = 32;
     INFO("Pixel format: %dx%d @ %dbpp\n", fb->vi.xres, fb->vi.yres, fb->vi.bits_per_pixel);
-
-#ifdef RECOVERY_BGRA
-    INFO("Pixel format: BGRA_8888\n");
-    fb->vi.red.offset     = 8;
-    fb->vi.red.length     = 8;
-    fb->vi.green.offset   = 16;
-    fb->vi.green.length   = 8;
-    fb->vi.blue.offset    = 24;
-    fb->vi.blue.length    = 8;
-    fb->vi.transp.offset  = 0;
-    fb->vi.transp.length  = 8;
-#elif  defined(RECOVERY_RGBX)
-    INFO("Pixel format: RGBX_8888\n");
-    fb->vi.red.offset     = 24;
-    fb->vi.red.length     = 8;
-    fb->vi.green.offset   = 16;
-    fb->vi.green.length   = 8;
-    fb->vi.blue.offset    = 8;
-    fb->vi.blue.length    = 8;
-    fb->vi.transp.offset  = 0;
-    fb->vi.transp.length  = 8;
-#elif defined(RECOVERY_RGB_565)
-    INFO("Pixel format: RGB_565\n");
-    fb->vi.blue.offset    = 0;
-    fb->vi.green.offset   = 5;
-    fb->vi.red.offset     = 11;
-    fb->vi.blue.length    = 5;
-    fb->vi.green.length   = 6;
-    fb->vi.red.length     = 5;
-    fb->vi.blue.msb_right = 0;
-    fb->vi.green.msb_right = 0;
-    fb->vi.red.msb_right = 0;
-    fb->vi.transp.offset  = 0;
-    fb->vi.transp.length  = 0;
-#else
-#error "Unknown pixel format"
-#endif
 
     fb->vi.vmode = FB_VMODE_NONINTERLACED;
     fb->vi.activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE;
+    ioctl(fb->fd, FBIOPUT_VSCREENINFO, &fb->vi);
+
+    ioctl(fb->fd, FBIOGET_FSCREENINFO, &fb->fi);
+    ioctl(fb->fd, FBIOGET_VSCREENINFO, &fb->vi);
+
+    INFO("fb0 reports (possibly inaccurate):\n"
+           "  vi.bits_per_pixel = %d\n"
+           "  vi.red.offset   = %3d   .length = %3d\n"
+           "  vi.green.offset = %3d   .length = %3d\n"
+           "  vi.blue.offset  = %3d   .length = %3d\n"
+           "  vi.xres = %3d vi.yres = %3d fi.line_length = %3d\n",
+
+           fb->vi.bits_per_pixel,
+           fb->vi.red.offset, fb->vi.red.length,
+           fb->vi.green.offset, fb->vi.green.length,
+           fb->vi.blue.offset, fb->vi.blue.length, fb->vi.xres, fb->vi.yres, fb->fi.line_length);
+
+    smem_len = fb->vi.yres * fb->fi.line_length;
+    INFO("smem_len: %d\n",smem_len);
 
     // mmap and memset to 0 before setting the vi to prevent screen flickering during init
-    px_type *mapped = mmap(0, fb->fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
+    px_type *mapped = mmap(0, smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
 
     if (mapped == MAP_FAILED)
         return -1;
 
-    memset(mapped, 0, fb->fi.smem_len);
-    munmap(mapped, fb->fi.smem_len);
+    memset(mapped, 0, smem_len);
+    munmap(mapped, smem_len);
 
     if (ioctl(fb->fd, FBIOPUT_VSCREENINFO, &fb->vi) < 0)
     {
@@ -102,14 +86,14 @@ static int impl_open(struct framebuffer *fb)
     if (ioctl(fb->fd, FBIOGET_FSCREENINFO, &fb->fi) < 0)
         return -1;
 
-    mapped = mmap(0, fb->fi.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
+    mapped = mmap(0, smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, fb->fd, 0);
 
     if (mapped == MAP_FAILED)
         return -1;
 
     struct fb_generic_data *data = mzalloc(sizeof(struct fb_generic_data));
     data->mapped[0] = mapped;
-    data->mapped[1] = (px_type*) (((uint8_t*)mapped) + (fb->vi.yres * fb->fi.line_length));
+    data->mapped[1] = (px_type*) calloc(fb->vi.yres * fb->fi.line_length, 1);
 
     fb->impl_data = data;
 
@@ -124,9 +108,15 @@ static int impl_open(struct framebuffer *fb)
 static void impl_close(struct framebuffer *fb)
 {
     struct fb_generic_data *data = fb->impl_data;
+    __u32 dummy = 0;
+
     if(data)
     {
-        munmap(data->mapped[0], fb->fi.smem_len);
+        memset(data->mapped[0], 0, smem_len);
+        ioctl(fb->fd, FBIOPAN_DISPLAY, &fb->vi);
+
+        munmap(data->mapped[0], smem_len);
+        munmap(data->mapped[1], smem_len);
         free(data);
         fb->impl_data = NULL;
     }
@@ -135,15 +125,11 @@ static void impl_close(struct framebuffer *fb)
 static int impl_update(struct framebuffer *fb)
 {
     struct fb_generic_data *data = fb->impl_data;
+    __u32 dummy = 0;
 
-    fb->vi.yres_virtual = fb->vi.yres * NUM_BUFFERS;
-    fb->vi.yoffset = data->active_buff * fb->vi.yres;
-
-    if (ioctl(fb->fd, FBIOPUT_VSCREENINFO, &fb->vi) < 0)
-    {
-        ERROR("active fb swap failed");
-        return -1;
-    }
+    ioctl(fb->fd, FBIO_WAITFORVSYNC, &dummy);
+    memcpy(data->mapped[0], data->mapped[1], fb->vi.yres * fb->fi.line_length);
+    ioctl(fb->fd, FBIOPAN_DISPLAY, &fb->vi);
 
     return 0;
 }
@@ -151,8 +137,7 @@ static int impl_update(struct framebuffer *fb)
 static void *impl_get_frame_dest(struct framebuffer *fb)
 {
     struct fb_generic_data *data = fb->impl_data;
-    data->active_buff = !data->active_buff;
-    return data->mapped[data->active_buff];
+    return data->mapped[1];
 }
 
 const struct fb_impl fb_impl_generic = {

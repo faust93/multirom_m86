@@ -1659,7 +1659,10 @@ int multirom_fill_kexec_android(struct multirom_status *s, struct multirom_rom *
 {
     int res = -1;
     char img_path[256];
+    char dtb_path[256];
+
     snprintf(img_path, sizeof(img_path), "%s/boot.img", rom->base_path);
+    snprintf(dtb_path, sizeof(dtb_path), "%s/dtb.img", rom->base_path);
 
     // Trampolines in ROM boot images may get out of sync, so we need to check it and
     // update if needed. I can't do that during ZIP installation because of USB drives.
@@ -1686,16 +1689,8 @@ int multirom_fill_kexec_android(struct multirom_status *s, struct multirom_rom *
     kexec_add_arg(kexec, "--initrd=/initrd.img");
 
 #ifdef MR_KEXEC_DTB
-    if(libbootimg_dump_dtb(&img, "/dtb.img") >= 0) {
         printf("DTB: dtb image found!");
-        kexec_add_arg(kexec, "--dtb=/dtb.img");
-    }
-    else {
-        printf("DTB: no dtb image found!");
-#ifdef MR_NOT_64BIT
-        kexec_add_arg(kexec, "--dtb");
-#endif
-    }
+        kexec_add_arg_prefix(kexec, "--dtb=", dtb_path);
 #endif
 
     char cmdline[1536];

@@ -18,7 +18,8 @@ LOCAL_FORCE_STATIC_EXECUTABLE := true
 ifeq ($(MR_INIT_DEVICES),)
     $(info MR_INIT_DEVICES was not defined in device files!)
 endif
-LOCAL_SRC_FILES += ../../../../$(MR_INIT_DEVICES)
+#LOCAL_SRC_FILES += ../../../../$(MR_INIT_DEVICES)
+LOCAL_SRC_FILES += mr_init_devices.c
 
 # for adb
 LOCAL_CFLAGS += -DPRODUCT_MODEL="\"$(PRODUCT_MODEL)\"" -DPRODUCT_MANUFACTURER="\"$(PRODUCT_MANUFACTURER)\""

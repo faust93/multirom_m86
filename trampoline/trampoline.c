@@ -99,7 +99,7 @@ static void run_multirom(void)
     char *cmd[] = { path, NULL };
     do
     {
-        ERROR("Running multirom\n");
+        ERROR("Running multirom: %s\n",path);
         int res = run_cmd(cmd);
         if(res == 0)
             break;

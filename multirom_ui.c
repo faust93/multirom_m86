@@ -265,8 +265,8 @@ int multirom_ui(struct multirom_status *s, struct multirom_rom **to_boot)
 
     ncard_show(b, 1);
     anim_stop(1);
-    fb_freeze(1);
-    fb_force_draw();
+//    fb_freeze(1);
+//    fb_force_draw();
 
     multirom_ui_destroy_theme();
     multirom_ui_free_themes(themes_info);

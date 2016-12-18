@@ -62,7 +62,7 @@ int mr_system(const char *shell_fmt, ...);
 
 inline int imin(int a, int b);
 inline int imax(int a, int b);
-inline int iabs(int a);
+int iabs(int a);
 inline int in_rect(int x, int y, int rx, int ry, int rw, int rh);
 
 inline void *mzalloc(size_t size); // alloc and fill with 0s
